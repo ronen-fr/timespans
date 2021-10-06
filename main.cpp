@@ -198,9 +198,9 @@ static bool false_matcher(const cmsec& t)
 // clang-format off
 static std::vector<matcher_opts_t> duration_fmt_selection {
 
-  /* longer than 1 year:            YMD */       matcher_opts_t{ 31556952s,                    true_matcher,      "0: {1:}y{2:}y{4:}d"}
-  /* 3 months and up:               MWD */,      matcher_opts_t{ cmsec(1000ll* 3 * 2'629'746), true_matcher,      "n1: {2:}m{3:}w{4:}Diw"}
-  /* do we REALLY want this?        WDH */,      matcher_opts_t{ cmsec(1000ll* 2 * 604'800),   false_matcher,      "n2: {3:}w{4:}Diw{7:}h"}
+  /* longer than 1 year:            YMD */       matcher_opts_t{ 31556952s,                    true_matcher,      "0: {1:}y{2:}m{4:}d"}
+  /* 3 months and up:               MWD */,      matcher_opts_t{ cmsec(1000ll* 3 * 2'629'746), true_matcher,      "n1: {2:}m{3:}w{5:}Diw"}
+  /* do we REALLY want this?        WDH */,      matcher_opts_t{ cmsec(1000ll* 2 * 604'800),   false_matcher,      "n2: {3:}w{5:}Diw{7:}h"}
   /* 2 days and up:                 DHm */,      matcher_opts_t{ cmsec(1000ll* 2 * 86'400),    true_matcher,      "n3: {6:}d{7:02}h{9:02}m"}  // consider removing the minutes
   /* 2 hours and up:                Hm  */,      matcher_opts_t{ cmsec(1000ll* 2 * 3'600),     true_matcher,      "nX: {8:}h{9:02}m"}
   /* 2 mins and up:                 ms  */,      matcher_opts_t{ cmsec(1000ll* 2 * 60),        true_matcher,      "nY: {10:}m{11:02}s"}
@@ -215,7 +215,7 @@ static std::vector<matcher_opts_t> duration_fmt_selection {
 
 static std::vector<string> selected_fmt {
 
-  "0: {1:}y{2:}y{4:}d",
+  "0: {1:}y{2:}m{4:}d",
   "1: {2:}m{3:}w{4:}Diw",
   "2: {3:}w{4:}Diw{7:}H",
   "3: {6:}D{7:02}H{9:02}M",
@@ -292,22 +292,24 @@ string dump_str_v2(cmsec x)
   /* param 1: years   */                auto p1_years = a / 3'155'695'2ll;
   int64_t ma = a % 3'155'695'2ll;
   /* param 2: months  */                auto p2_months = ma / 2'629'746;
+
+  ///\attention: 2'629'746 is not an integral number of 86'400 (days)!
   int64_t ma_wM = ma % 2'629'746;
   /* param 3: weeks (imply months) */   auto p3_weeks = ma_wM / 604'800;
   /* param 4: days, if months  */       auto p4_days_wM = ma_wM / 86'400;
   /* param 5: days, if weeks  */        auto p5_days_wWeeks = (ma_wM % 604'800) / 86'400;
   /* param 6: days, w/o M, Wk  */       auto p6_days = ma / 86'400;
 
-  int64_t md = ma % 86'400;
+  int64_t md = ma_wM % 86'400;
   /* param 7: H, if D  */               auto p7_H_wD = md / 3'600;
-  /* param 8: H, w/o D  */              auto p8_H = ma / 3'600;
+  /* param 8: H, w/o D  */              auto p8_H = ma_wM / 3'600;
 
-  /* param 9: M, if H  */               auto p9_M_wH =(ma % 3'600) / 60;
-  /* param 10: M, w/o H  */             auto p10_M = ma / 60;
+  /* param 9: M, if H  */               auto p9_M_wH =(md % 3'600) / 60;
+  /* param 10: M, w/o H  */             auto p10_M = md / 60;
 
   // assuming for p11 that there is nothing higher than minutes
-  /* param 11: s, if M  */              auto p11_S_wM = (ma - p10_M*60) % 60;
-  /* param 12: s, w/o H  */             auto p12_S = ma; // % 60;
+  /* param 11: s, if M  */              auto p11_S_wM = (md - p10_M*60) % 60;
+  /* param 12: s, w/o H  */             auto p12_S = md; // % 60;
 
 
   //cout << fmt::format("Selected the following format: {}\n", chosen_fmt);
@@ -389,6 +391,10 @@ cmsec to_cmsec() {
 
 vector<fmtcase_t> fmtcases {
     fmtcase_t{ 0, 0, 0,   0, 0, 0, 777, "777ms" }
+
+  , fmtcase_t{ 0, 1, 3,   0, 1, 1, 777, "v" }
+
+
   , fmtcase_t{ 0, 0, 0,   0, 0, 1, 777, "*01.777s" }
   , fmtcase_t{ 0, 0, 0,   0, 1, 1, 777, "61s" }
 
@@ -423,6 +429,45 @@ vector<fmtcase_t> fmtcases {
   , fmtcase_t{ 0, 0, 0,   2, 0, 5, 999, "v" }
   , fmtcase_t{ 0, 0, 0,   2, 0, 0, 999, "v" }
   , fmtcase_t{ 0, 0, 0,   2, 4, 0, 0, "v" }
+
+
+  , fmtcase_t{ 1, 1, 3,   0, 1, 1, 777, "v" }
+
+
+  , fmtcase_t{ 2, 0, 0,   0, 0, 1, 777, "d" }
+  , fmtcase_t{ 1, 0, 0,   0, 1, 1, 777, "d" }
+
+  , fmtcase_t{ 2, 0, 1,   0, 0, 0, 777, "d" }
+  , fmtcase_t{ 1, 0, 1,   0, 0, 1, 777, "d" }
+  , fmtcase_t{ 1, 8, 1,   0, 1, 1, 777, "d" }
+  , fmtcase_t{ 1, 8, 3,   0, 1, 1, 777, "d" }
+  , fmtcase_t{ 1, 0, 3,   0, 1, 1, 0, "v" }
+  , fmtcase_t{ 5, 3, 3,   0, 1, 1, 777, "v" }
+  , fmtcase_t{ 1, 1, 3,   0, 1, 1, 777, "v" }
+
+
+  , fmtcase_t{ 0, 1, 1,   0, 1, 1, 777, "v" }
+
+
+  , fmtcase_t{ 0, 8, 1,   0, 1, 1, 777, "v" }
+  , fmtcase_t{ 0, 8, 1,   0, 1, 0, 0, "v" }
+  , fmtcase_t{ 0, 3, 1,   0, 1, 1, 777, "*v" }
+  , fmtcase_t{ 0, 3, 17,   0, 1, 1, 777, "*v" }
+  , fmtcase_t{ 0, 1, 1,   0, 1, 1, 777, "v" }
+  , fmtcase_t{ 0, 8, 1,   0, 1, 1, 777, "v" }
+  , fmtcase_t{ 0, 8, 1,   0, 1, 0, 0, "v" }
+  , fmtcase_t{ 0, 3, 1,   0, 0, 0, 0, "v" }
+
+
+  // hours
+  , fmtcase_t{ 0, 0, 2,   1, 4, 5, 999, "v" }
+  , fmtcase_t{ 0, 0, 2,   1, 0, 5, 999, "v" }
+  , fmtcase_t{ 0, 0, 2,   1, 0, 0, 999, "v" }
+  , fmtcase_t{ 0, 0, 2,   1, 4, 0, 0, "v" }
+  , fmtcase_t{ 0, 0, 2,   2, 4, 5, 999, "v" }
+  , fmtcase_t{ 0, 0, 2,   2, 0, 5, 999, "v" }
+  , fmtcase_t{ 0, 0, 2,   2, 0, 0, 999, "v" }
+  , fmtcase_t{ 0, 0, 2,   2, 4, 0, 0, "v" }
 
 };
 
