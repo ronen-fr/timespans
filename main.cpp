@@ -158,6 +158,8 @@ static std::vector<cmsec/*std::chrono::seconds*/> format_limits {
 
   cmsec(1000* 2 * 60),
 
+  cmsec(1000* 1 * 60),
+
   cmsec(2000),
 
   cmsec(0)
@@ -171,9 +173,43 @@ static std::vector<string> selected_f_name {
   "3-DHm",
   "4-Hms",
   "5-Msl?",
-  "6-sl?",
-  "7-l"
+  "6-s",
+  "7-sl?",
+  "8-l"
 };
+
+using matcher_t = bool(*)(const cmsec& t);
+struct matcher_opts_t {
+  cmsec   min_duration_;
+  matcher_t selector_;
+  string format_;
+};
+
+static bool true_matcher(const cmsec& t)
+{
+  return true;
+}
+
+static bool are_there_seconds(const cmsec& t)
+{
+  return true;
+}
+
+// clang-format off
+static std::vector<matcher_opts_t> duration_fmt_selection {
+
+  /* longer than 1 year:            YMD */       matcher_opts_t{ 31556952s,                    true_matcher,      "0: {1:}y{2:}y{4:}d"}
+  /* 3 months and up:               MWD */,      matcher_opts_t{ cmsec(1000ll* 3 * 2'629'746), true_matcher,      "n1: {2:}m{3:}w{4:}Diw"}
+  /* do we REALLY want this?        WDH */,      matcher_opts_t{ cmsec(1000ll* 2 * 604'800),   true_matcher,      "n2: {3:}w{4:}Diw{7:}h"}
+  /* 2 days and up:                 DHm */,      matcher_opts_t{ cmsec(1000* 2 * 86'400),      true_matcher,      "n3: {6:}d{7:02}h{9:02}m"}  // consider removing the minutes
+  /* 2 hours and up:                Hm  */,      matcher_opts_t{ cmsec(1000* 2 * 3'600),       true_matcher,      "nX: {8:}h{9:02}m"}
+  /* 2 mins and up:                 ms  */,      matcher_opts_t{ cmsec(1000* 2 * 60),          true_matcher,      "nY: {10:}m{11:02}s"}
+  /* 1 min and up:                  s.ms*/,      matcher_opts_t{ cmsec(1000* 1 * 60),          true_matcher,      "n7: {13:%S}s"}
+  /* 1 min and up:                  s.ms*/,      matcher_opts_t{ cmsec(0),                     true_matcher,      "n8: {13:%S}s"}
+};
+
+
+// clang-format on
 
 
 static std::vector<string> selected_fmt {
@@ -183,9 +219,12 @@ static std::vector<string> selected_fmt {
   "2: {3:}w{4:}Diw{7:}H",
   "3: {6:}D{7:02}H{9:02}M",
   "4: {8:}H{9:02}M{11:02}S",
-  "5: {10}M{11:02}S{0:03}ms",
-  "6: {12:}S{0:03}ms",
-  "7: {0:}ms"
+  "5: {10:}M{11:02}S{0:03}ms",
+  "6: {12:}s",
+  "7: {13:%S}s",
+  //"6: {12:}S{0:03}ms",
+  "8: {13:%S}s",
+  //"7: {0:}ms"
 };
 
 
@@ -200,6 +239,7 @@ string dump_str(cmsec x)
 {
   auto a = duration_cast<std::chrono::duration<int64_t>>(x).count();
   auto just_ms = x.count() - a * 1'000ll;
+  chrono::milliseconds s_and_ms{duration_cast<chrono::milliseconds>(x).count()};
 
   /* param 1: years   */                auto p1_years = a / 3'155'695'2ll;
   int64_t ma = a % 3'155'695'2ll;
@@ -219,7 +259,7 @@ string dump_str(cmsec x)
 
   // assuming for p11 that there is nothing higher than minutes
   /* param 11: s, if M  */              auto p11_S_wM = (ma - p10_M*60) % 60;
-  /* param 12: s, w/o H  */             auto p12_S = ma % 60;
+  /* param 12: s, w/o H  */             auto p12_S = ma; // % 60;
 
 
   cout << fmt::format("Selected the following format: {}\n", fmt_byrange(x));
@@ -229,11 +269,57 @@ string dump_str(cmsec x)
 //    cout << fmt::format(ff, p1_years, p2_months, p3_weeks, p4_days_wM, p5_days_wWeeks, p6_days, p7_H_wD, p8_H, p9_M_wH, p10_M, 111, 112, 113, 114, 115) << " --- \n";
 //  }
 
-  auto res = fmt::format(fmt_byrange(x), just_ms, p1_years, p2_months, p3_weeks, p4_days_wM, p5_days_wWeeks, p6_days, p7_H_wD, p8_H, p9_M_wH, p10_M, p11_S_wM, p12_S, 999);
+  auto res = fmt::format(fmt_byrange(x), just_ms, p1_years, p2_months, p3_weeks, p4_days_wM, p5_days_wWeeks, p6_days, p7_H_wD, p8_H, p9_M_wH, p10_M, p11_S_wM, p12_S, s_and_ms);
 
   return res;
 }
 
+string dump_str_v2(cmsec x)
+{
+  // find a match in the patterns
+  auto fnt = find_if(duration_fmt_selection.begin(), duration_fmt_selection.end(),
+      [x](const matcher_opts_t& from_tbl){
+        return x >= from_tbl.min_duration_ && (*from_tbl.selector_)(x);
+      });
+
+  auto chosen_fmt = fnt->format_;
+
+  auto a = duration_cast<std::chrono::duration<int64_t>>(x).count();
+  auto just_ms = x.count() - a * 1'000ll;
+  chrono::milliseconds s_and_ms{duration_cast<chrono::milliseconds>(x).count()};
+
+  /* param 1: years   */                auto p1_years = a / 3'155'695'2ll;
+  int64_t ma = a % 3'155'695'2ll;
+  /* param 2: months  */                auto p2_months = ma / 2'629'746;
+  int64_t ma_wM = ma % 2'629'746;
+  /* param 3: weeks (imply months) */   auto p3_weeks = ma_wM / 604'800;
+  /* param 4: days, if months  */       auto p4_days_wM = ma_wM / 86'400;
+  /* param 5: days, if weeks  */        auto p5_days_wWeeks = (ma_wM % 604'800) / 86'400;
+  /* param 6: days, w/o M, Wk  */       auto p6_days = ma / 86'400;
+
+  int64_t md = ma % 86'400;
+  /* param 7: H, if D  */               auto p7_H_wD = md / 3'600;
+  /* param 8: H, w/o D  */              auto p8_H = ma / 3'600;
+
+  /* param 9: M, if H  */               auto p9_M_wH = (ma - p8_H*60) % 60;
+  /* param 10: M, w/o H  */             auto p10_M = ma % 60;
+
+  // assuming for p11 that there is nothing higher than minutes
+  /* param 11: s, if M  */              auto p11_S_wM = (ma - p10_M*60) % 60;
+  /* param 12: s, w/o H  */             auto p12_S = ma; // % 60;
+
+
+  cout << fmt::format("Selected the following format: {}\n", chosen_fmt);
+
+  //  for (const auto& ff : selected_fmt) {
+  //
+  //    cout << fmt::format(ff, p1_years, p2_months, p3_weeks, p4_days_wM, p5_days_wWeeks, p6_days, p7_H_wD, p8_H, p9_M_wH, p10_M, 111, 112, 113, 114, 115) << " --- \n";
+  //  }
+
+  auto res = fmt::format(chosen_fmt, just_ms, p1_years, p2_months, p3_weeks, p4_days_wM, p5_days_wWeeks, p6_days, p7_H_wD, p8_H, p9_M_wH, p10_M, p11_S_wM, p12_S, s_and_ms);
+
+  return res;
+}
 
 
 
@@ -257,6 +343,14 @@ string byrange(int64_t msecs)
 
 void basic_vec_test()
 {
+  cout << "\n^^^^^^^^^^^^^^^^^^^^^^^^ testing fmt options:\n";
+
+  cout << fmt::format("{:%S} {:%S} {:%S}\n", 13s, 13'000ms, 13'650ms);
+  //cout << fmt::format("{:%S} {:%S} {:%S}\n", 13s, 13'000ms, 13'650ms);
+  //cout << fmt::format("{1:.{2}}\n", 11, 13s, 3);
+
+  cout << "\n^^^^^^^^^^^^^^^^^^^^^^^^\n\n";
+
   for (auto r : format_limits) {
     cout << fmt::format("{}  {}\n", r.count(), r);
   }
@@ -295,7 +389,7 @@ cmsec to_cmsec() {
 vector<fmtcase_t> fmtcases {
   fmtcase_t{ 0, 0, 0,   0, 0, 0, 777, "0.777s" },
   fmtcase_t{ 0, 0, 0,   0, 0, 1, 777, "1.777s" },
-  fmtcase_t{ 0, 0, 0,   0, 1, 1, 777, "1M1.777s" },
+  fmtcase_t{ 0, 0, 0,   0, 1, 1, 777, "61s" },
 
   fmtcase_t{ 0, 0, 1,   0, 0, 0, 777, "maybe 24H w/o the rest?" },
   fmtcase_t{ 0, 0, 1,   0, 0, 1, 777, "1.777s" },
@@ -313,8 +407,8 @@ void test_fmtcases()
   for (auto& f : fmtcases) {
 
     auto f_as_sms{f.to_cmsec()};
-    cout << fmt::format(" test case <{}/{}/{} {}/{}/{} {}> ({} ? ?)  ---> {}\n",
-       f.y_, f.m_, f.d_, f.h_, f.min_, f.s_, f.ms_, f.exp_, dump_str(f_as_sms));
+    cout << fmt::format(" test case <{}/{}/{} {}/{}/{} {}> ({} ? ?)  ---> {}        \tNEW: {}\n",
+       f.y_, f.m_, f.d_, f.h_, f.min_, f.s_, f.ms_, f.exp_, dump_str(f_as_sms), dump_str_v2(f_as_sms));
   }
 
 }
