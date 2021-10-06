@@ -190,9 +190,9 @@ static bool true_matcher(const cmsec& t)
   return true;
 }
 
-static bool are_there_seconds(const cmsec& t)
+static bool false_matcher(const cmsec& t)
 {
-  return true;
+  return false;
 }
 
 // clang-format off
@@ -200,12 +200,13 @@ static std::vector<matcher_opts_t> duration_fmt_selection {
 
   /* longer than 1 year:            YMD */       matcher_opts_t{ 31556952s,                    true_matcher,      "0: {1:}y{2:}y{4:}d"}
   /* 3 months and up:               MWD */,      matcher_opts_t{ cmsec(1000ll* 3 * 2'629'746), true_matcher,      "n1: {2:}m{3:}w{4:}Diw"}
-  /* do we REALLY want this?        WDH */,      matcher_opts_t{ cmsec(1000ll* 2 * 604'800),   true_matcher,      "n2: {3:}w{4:}Diw{7:}h"}
-  /* 2 days and up:                 DHm */,      matcher_opts_t{ cmsec(1000* 2 * 86'400),      true_matcher,      "n3: {6:}d{7:02}h{9:02}m"}  // consider removing the minutes
-  /* 2 hours and up:                Hm  */,      matcher_opts_t{ cmsec(1000* 2 * 3'600),       true_matcher,      "nX: {8:}h{9:02}m"}
-  /* 2 mins and up:                 ms  */,      matcher_opts_t{ cmsec(1000* 2 * 60),          true_matcher,      "nY: {10:}m{11:02}s"}
-  /* 1 min and up:                  s.ms*/,      matcher_opts_t{ cmsec(1000* 1 * 60),          true_matcher,      "n7: {13:%S}s"}
-  /* 1 min and up:                  s.ms*/,      matcher_opts_t{ cmsec(0),                     true_matcher,      "n8: {13:%S}s"}
+  /* do we REALLY want this?        WDH */,      matcher_opts_t{ cmsec(1000ll* 2 * 604'800),   false_matcher,      "n2: {3:}w{4:}Diw{7:}h"}
+  /* 2 days and up:                 DHm */,      matcher_opts_t{ cmsec(1000ll* 2 * 86'400),    true_matcher,      "n3: {6:}d{7:02}h{9:02}m"}  // consider removing the minutes
+  /* 2 hours and up:                Hm  */,      matcher_opts_t{ cmsec(1000ll* 2 * 3'600),     true_matcher,      "nX: {8:}h{9:02}m"}
+  /* 2 mins and up:                 ms  */,      matcher_opts_t{ cmsec(1000ll* 2 * 60),        true_matcher,      "nY: {10:}m{11:02}s"}
+  /* 1 min and up:                  s   */,      matcher_opts_t{ cmsec(1000ll* 1 * 60),        true_matcher,      "nA: {12:}s"}
+  /* 1 sec and up:                  s.ms*/,      matcher_opts_t{ cmsec(1000ll* 1 ),            true_matcher,      "n7: {13:%S}s"}
+  /* all the rest:                  ms*/,        matcher_opts_t{ cmsec(0),                     true_matcher,      "n8: {0:}ms"}
 };
 
 
@@ -254,15 +255,15 @@ string dump_str(cmsec x)
   /* param 7: H, if D  */               auto p7_H_wD = md / 3'600;
   /* param 8: H, w/o D  */              auto p8_H = ma / 3'600;
 
-  /* param 9: M, if H  */               auto p9_M_wH = (ma - p8_H*60) % 60;
-  /* param 10: M, w/o H  */             auto p10_M = ma % 60;
+  /* param 9: M, if H  */               auto p9_M_wH = (ma % 3'600) / 60; //(ma - p8_H*60) % 60;
+  /* param 10: M, w/o H  */             auto p10_M = ma / 60;
 
   // assuming for p11 that there is nothing higher than minutes
   /* param 11: s, if M  */              auto p11_S_wM = (ma - p10_M*60) % 60;
   /* param 12: s, w/o H  */             auto p12_S = ma; // % 60;
 
 
-  cout << fmt::format("Selected the following format: {}\n", fmt_byrange(x));
+  //cout << fmt::format("Selected the following format: {}\n", fmt_byrange(x));
 
 //  for (const auto& ff : selected_fmt) {
 //
@@ -301,15 +302,15 @@ string dump_str_v2(cmsec x)
   /* param 7: H, if D  */               auto p7_H_wD = md / 3'600;
   /* param 8: H, w/o D  */              auto p8_H = ma / 3'600;
 
-  /* param 9: M, if H  */               auto p9_M_wH = (ma - p8_H*60) % 60;
-  /* param 10: M, w/o H  */             auto p10_M = ma % 60;
+  /* param 9: M, if H  */               auto p9_M_wH =(ma % 3'600) / 60;
+  /* param 10: M, w/o H  */             auto p10_M = ma / 60;
 
   // assuming for p11 that there is nothing higher than minutes
   /* param 11: s, if M  */              auto p11_S_wM = (ma - p10_M*60) % 60;
   /* param 12: s, w/o H  */             auto p12_S = ma; // % 60;
 
 
-  cout << fmt::format("Selected the following format: {}\n", chosen_fmt);
+  //cout << fmt::format("Selected the following format: {}\n", chosen_fmt);
 
   //  for (const auto& ff : selected_fmt) {
   //
@@ -387,17 +388,41 @@ cmsec to_cmsec() {
 
 
 vector<fmtcase_t> fmtcases {
-  fmtcase_t{ 0, 0, 0,   0, 0, 0, 777, "0.777s" },
-  fmtcase_t{ 0, 0, 0,   0, 0, 1, 777, "1.777s" },
-  fmtcase_t{ 0, 0, 0,   0, 1, 1, 777, "61s" },
+    fmtcase_t{ 0, 0, 0,   0, 0, 0, 777, "777ms" }
+  , fmtcase_t{ 0, 0, 0,   0, 0, 1, 777, "*01.777s" }
+  , fmtcase_t{ 0, 0, 0,   0, 1, 1, 777, "61s" }
 
-  fmtcase_t{ 0, 0, 1,   0, 0, 0, 777, "maybe 24H w/o the rest?" },
-  fmtcase_t{ 0, 0, 1,   0, 0, 1, 777, "1.777s" },
-  fmtcase_t{ 0, 0, 1,   0, 1, 1, 777, "24H01M01S" }
+  , fmtcase_t{ 0, 0, 1,   0, 0, 0, 777, "maybe 24H w/o the rest?" }
+  , fmtcase_t{ 0, 0, 1,   0, 0, 1, 777, "1d00h" }
+  , fmtcase_t{ 0, 0, 1,   0, 1, 1, 777, "24H01M01S" }
   , fmtcase_t{ 0, 0, 3,   0, 1, 1, 777, "3D00H01M" }
   , fmtcase_t{ 0, 0, 3,   0, 1, 1, 0, "v" }
   , fmtcase_t{ 0, 3, 3,   0, 1, 1, 777, "v" }
   , fmtcase_t{ 0, 1, 3,   0, 1, 1, 777, "v" }
+
+
+  , fmtcase_t{ 0, 1, 1,   0, 1, 1, 777, "v" }
+
+
+  , fmtcase_t{ 0, 0, 1,   0, 1, 1, 777, "24h01m" }
+  , fmtcase_t{ 0, 0, 1,   0, 1, 0, 0, "24h01m" }
+  , fmtcase_t{ 0, 3, 1,   0, 1, 1, 777, "*3m0w1Diw" } // or better - just 3m01d
+  , fmtcase_t{ 0, 3, 17,   0, 1, 1, 777, "*3m2w3Diw" } // or better - just 3m17d
+  , fmtcase_t{ 0, 1, 1,   0, 1, 1, 777, "v" }
+  , fmtcase_t{ 0, 0, 1,   0, 1, 1, 777, "v" }
+  , fmtcase_t{ 0, 0, 1,   0, 1, 0, 0, "v" }
+  , fmtcase_t{ 0, 3, 1,   0, 0, 0, 0, "v" }
+
+
+  // hours
+  , fmtcase_t{ 0, 0, 0,   1, 4, 5, 999, "v" }
+  , fmtcase_t{ 0, 0, 0,   1, 0, 5, 999, "v" }
+  , fmtcase_t{ 0, 0, 0,   1, 0, 0, 999, "v" }
+  , fmtcase_t{ 0, 0, 0,   1, 4, 0, 0, "v" }
+  , fmtcase_t{ 0, 0, 0,   2, 4, 5, 999, "v" }
+  , fmtcase_t{ 0, 0, 0,   2, 0, 5, 999, "v" }
+  , fmtcase_t{ 0, 0, 0,   2, 0, 0, 999, "v" }
+  , fmtcase_t{ 0, 0, 0,   2, 4, 0, 0, "v" }
 
 };
 
@@ -407,7 +432,7 @@ void test_fmtcases()
   for (auto& f : fmtcases) {
 
     auto f_as_sms{f.to_cmsec()};
-    cout << fmt::format(" test case <{}/{}/{} {}/{}/{} {}> ({} ? ?)  ---> {}        \tNEW: {}\n",
+    cout << fmt::format(" test case <{}/{}/{} {}/{}/{} {:03}> ({:8}?? )  ---> {}        \tNEW: {}\n",
        f.y_, f.m_, f.d_, f.h_, f.min_, f.s_, f.ms_, f.exp_, dump_str(f_as_sms), dump_str_v2(f_as_sms));
   }
 
@@ -547,65 +572,8 @@ void test_times()
 
 }
 
-uint8_t shachar(uint8_t a, uint8_t b) { return a+b; }
-
-std::vector<const char*>
-argv_to_vec(int ac, const char * const *av)
-{
-
-  return {av+1, av+ac};
-}
-
-// std::vector<const char*> f1(int ac, const char** av)
-// {
-//   cout << "\n" << __func__ << "\n";
-//   std::vector<const char*> args;
-//   argv_to_vec(ac, av, args);
-//   return args;
-// }
-
-std::vector<const char*> f2(int ac, const char** av)
-{
-  cout << "\n" << __func__ << "\n";
-  return argv_to_vec(ac, av);
-}
-
-std::vector<const char*> f4(int ac, char** av)
-{
-  cout << "\n" << __func__ << "\n";
-  return argv_to_vec(ac, av);
-}
-
-// std::vector<const char*> f2(int ac, char** av)
-// {
-//   cout << "\n" << __func__ << "\n";
-//   return *argv_to_opt_vec(ac, av);
-// }
-
-void pp(const std::vector<const char*>& v)
-{
-  for (auto x : v) {
-
-    cout << "-- " << x << "\n";
-
-  }
-}
-
-
 int main(int ac, const char** av)
 {
   test_fmtcases();
-  basic_vec_test();
-
-/*
-  //pp(f1(ac, av));
-  pp(argv_to_vec(ac, av));
-
-  pp(f2(ac, av));
-  //auto v1 = argv_to_opt_vec(ac, av);
-
-
-  test_times();
-  */
-
+  //basic_vec_test();
 }
